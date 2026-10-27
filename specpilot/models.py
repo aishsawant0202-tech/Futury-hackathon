@@ -136,6 +136,21 @@ class TestCase(_Model):
     instructions: str = Field(default="", description="What the tester enters in the payroll software")
 
 
+class TopicCase(_Model):
+    """A test case the testing agent wrote for one topic (spec section), built only from that topic's rules."""
+
+    __test__ = False
+
+    id: str = Field(pattern=r"^TC-\d+(\.\d+)*-\d{3}$", description="e.g. TC-3.12-001")
+    section: str = Field(description="The topic, e.g. 3.12")
+    requirement_ids: list[str] = Field(min_length=1, description="The rules the case tests")
+    kind: CaseKind
+    title: str
+    given: str = Field(description="The situation and input data entered in the payroll software")
+    steps: list[str] = Field(default_factory=list)
+    expected: str = Field(description="What correct software must do or output, taken from the cited rules")
+
+
 class ExpectedResult(_Model):
     """What correct software must output for a test case. Produced by the reference model, never by an LLM."""
 

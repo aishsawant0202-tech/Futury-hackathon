@@ -14,6 +14,7 @@ from specpilot.models import (
     Finding,
     Requirement,
     TestCase,
+    TopicCase,
     Verdict,
 )
 
@@ -59,6 +60,13 @@ CREATE TABLE IF NOT EXISTS case_requirements (
     PRIMARY KEY (test_case_id, requirement_id)
 );
 
+-- Test cases the testing agent wrote per topic (spec section)
+CREATE TABLE IF NOT EXISTS topic_cases (
+    id      TEXT PRIMARY KEY,
+    section TEXT NOT NULL,
+    data    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS expected_results (
     test_case_id TEXT PRIMARY KEY REFERENCES test_cases(id) ON DELETE CASCADE,
     data         TEXT NOT NULL
@@ -67,7 +75,7 @@ CREATE TABLE IF NOT EXISTS expected_results (
 CREATE TABLE IF NOT EXISTS findings (
     id             INTEGER PRIMARY KEY,
     run_id         TEXT NOT NULL,
-    test_case_id   TEXT NOT NULL REFERENCES test_cases(id),
+    test_case_id   TEXT NOT NULL,  -- a test_cases or topic_cases id
     verdict        TEXT NOT NULL,
     layer          TEXT NOT NULL,
     requirement_id TEXT,
@@ -95,6 +103,7 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
     _drop_status(conn)
+    _findings_without_case_fk(conn)
     return conn
 
 
@@ -104,6 +113,18 @@ def _drop_status(conn: sqlite3.Connection) -> None:
         with conn:
             conn.execute("ALTER TABLE requirements DROP COLUMN status")
             conn.execute("UPDATE requirements SET data = json_remove(data, '$.status', '$.reviewer_note')")
+
+
+def _findings_without_case_fk(conn: sqlite3.Connection) -> None:
+    """Databases made before topic test cases: findings may only point to test_cases. Rebuild without that link."""
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'findings'").fetchone()["sql"]
+    if "REFERENCES test_cases" not in sql:
+        return
+    with conn:
+        conn.execute("ALTER TABLE findings RENAME TO findings_old")
+        conn.executescript(SCHEMA)
+        conn.execute("INSERT INTO findings SELECT * FROM findings_old")
+        conn.execute("DROP TABLE findings_old")
 
 
 # --- spec text ---------------------------------------------------------------
@@ -147,6 +168,16 @@ def save_sections(conn: sqlite3.Connection, document: str, sections: list[dict])
             "INSERT INTO spec_sections (document, number, title, first_page, last_page) VALUES (?, ?, ?, ?, ?)",
             [(document, s["number"], s["title"], s["first_page"], s["last_page"]) for s in sections],
         )
+
+
+def list_documents(conn: sqlite3.Connection) -> list[dict]:
+    """Every ingested document with its page and section count."""
+    rows = conn.execute(
+        """SELECT p.document, COUNT(*) AS pages,
+                  (SELECT COUNT(*) FROM spec_sections s WHERE s.document = p.document) AS sections
+           FROM spec_pages p GROUP BY p.document ORDER BY p.document"""
+    )
+    return [dict(r) for r in rows]
 
 
 def list_sections(conn: sqlite3.Connection, document: str) -> list[dict]:
@@ -207,6 +238,7 @@ def delete_section(conn: sqlite3.Connection, section: str) -> int:
     with conn:
         conn.execute(f"DELETE FROM findings WHERE test_case_id IN ({cases})", (section,))
         conn.execute(f"DELETE FROM test_cases WHERE id IN ({cases})", (section,))
+        conn.execute("DELETE FROM topic_cases WHERE section = ?", (section,))
         return conn.execute("DELETE FROM requirements WHERE section = ?", (section,)).rowcount
 
 
@@ -255,6 +287,24 @@ def coverage(conn: sqlite3.Connection) -> list[dict]:
     return [{k: (row[k] or 0) if k != "requirement_id" else row[k] for k in row.keys()} for row in rows]
 
 
+def save_topic_cases(conn: sqlite3.Connection, section: str, cases: list[TopicCase]) -> None:
+    """Replace a topic's test cases with a new set."""
+    with conn:
+        conn.execute("DELETE FROM topic_cases WHERE section = ?", (section,))
+        conn.executemany(
+            "INSERT INTO topic_cases (id, section, data) VALUES (?, ?, ?)",
+            [(c.id, section, c.model_dump_json()) for c in cases],
+        )
+
+
+def list_topic_cases(conn: sqlite3.Connection, section: str | None = None) -> list[TopicCase]:
+    if section is None:
+        rows = conn.execute("SELECT data FROM topic_cases ORDER BY section, id").fetchall()
+    else:
+        rows = conn.execute("SELECT data FROM topic_cases WHERE section = ? ORDER BY id", (section,)).fetchall()
+    return [TopicCase.model_validate_json(r["data"]) for r in rows]
+
+
 def save_expected(conn: sqlite3.Connection, e: ExpectedResult) -> None:
     with conn:
         conn.execute("INSERT OR REPLACE INTO expected_results (test_case_id, data) VALUES (?, ?)", (e.test_case_id, e.model_dump_json()))
@@ -285,6 +335,13 @@ def list_findings(conn: sqlite3.Connection, run_id: str | None = None, verdict: 
         sql += " AND verdict = ?"
         args.append(verdict.value)
     return [Finding.model_validate_json(r["data"]) for r in conn.execute(sql + " ORDER BY id", args)]
+
+
+def reset_run(conn: sqlite3.Connection) -> None:
+    """Start fresh: drop rules, test cases, expected results and findings. The loaded spec and the audit log stay."""
+    with conn:
+        for table in ("findings", "expected_results", "case_requirements", "test_cases", "topic_cases", "requirements"):
+            conn.execute(f"DELETE FROM {table}")
 
 
 # --- audit -------------------------------------------------------------------

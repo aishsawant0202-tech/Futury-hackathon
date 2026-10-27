@@ -7,6 +7,10 @@ data/samples/*
 !data/specs/.gitkeep
 !data/samples/.gitkeep
 
+# Vendor reports (e.g. SAP) are the vendors' material: kept local, never committed
+data/vendor/*
+!data/vendor/.gitkeep
+
 # Generated at runtime
 .cache/
 *.db

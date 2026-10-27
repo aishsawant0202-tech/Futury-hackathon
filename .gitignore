@@ -11,6 +11,7 @@ data/samples/*
 .cache/
 *.db
 output/
+out/
 
 # Python
 .venv/

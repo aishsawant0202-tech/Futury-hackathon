@@ -1,0 +1,72 @@
+{
+  "id": "REQ-41-PRECONDITION",
+  "title": "When may the employer send reason 41 (Anforderung Vorerkrankungsmitteilungen)?",
+  "reason_codes": ["41"],
+  "kind": "precondition",
+  "logic": "AND",
+  "criteria": [
+    {
+      "id": "C1",
+      "fact": "current_certified",
+      "op": "=",
+      "value": true,
+      "source_rule_ids": ["R-3.12-901"],
+      "quote": "[PLACEHOLDER p.135] sick note for the current absence"
+    },
+    {
+      "id": "C2",
+      "fact": "prior_certified_6m",
+      "op": "=",
+      "value": true,
+      "source_rule_ids": ["R-3.12-902"],
+      "quote": "[PLACEHOLDER p.135] certified previous illness in the 6 months before the current absence"
+    },
+    {
+      "id": "C3",
+      "fact": "total_days_12m",
+      "op": ">=",
+      "value": 30,
+      "source_rule_ids": ["R-3.12-903"],
+      "quote": "[PLACEHOLDER p.135] ... zusammen mit der aktuellen AU-Zeit mindestens 30 Tage umfassen"
+    },
+    {
+      "id": "C4",
+      "fact": "statutory_insured",
+      "op": "=",
+      "value": true,
+      "source_rule_ids": ["R-3.12-904"],
+      "quote": "[PLACEHOLDER p.136] not possible for privately insured employees"
+    },
+    {
+      "id": "C5",
+      "fact": "marginal_employment",
+      "op": "=",
+      "value": false,
+      "source_rule_ids": ["R-3.12-904"],
+      "quote": "[PLACEHOLDER p.136] not possible for marginal employment (Minijob)"
+    }
+  ],
+  "source_rule_ids": ["R-3.12-901", "R-3.12-902", "R-3.12-903", "R-3.12-904", "R-3.12-905", "R-3.12-906", "R-3.12-907"],
+  "unused_rules": [
+    {
+      "rule_id": "R-3.12-905",
+      "reason": "Defines how an open-ended absence is counted (report date + 7 days, p.135); built into the fact total_days_12m, not a separate condition."
+    },
+    {
+      "rule_id": "R-3.12-906",
+      "reason": "Gap of exactly 6 months (p.135 'nicht mehr als' vs p.136 'nicht mindestens'): decides which earlier periods are reported in the DBVO, not whether reason 41 may be sent."
+    },
+    {
+      "rule_id": "R-3.12-907",
+      "reason": "How far back periods are reported (p.135 no time limit vs p.136 at most 12 months): content of the DBVO, not whether reason 41 may be sent."
+    }
+  ],
+  "missing_facts": [],
+  "version": 1,
+  "produced_by": "hand",
+  "flags": [
+    "GOLD CARD written by hand from specpilot/tools/reference_model.py (checks C1-C4, pp.135-136).",
+    "PLACEHOLDER rule ids R-3.12-901..907 and placeholder quotes: replace with the extractor's real rule ids and German quotes once § 3.12 has been extracted.",
+    "Not yet approved by the examiner."
+  ]
+}

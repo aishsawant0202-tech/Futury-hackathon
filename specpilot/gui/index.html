@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpecPilot Dashboard</title>
+<style>
+:root{
+  --navy:#1F3A5F;--teal:#0B6E70;--ink:#1B1F24;--ink-2:#3D4C61;--line:#B8C4D4;--line-2:#D5DDE8;--wash:#E8EEF5;--surface:#fff;--page:#F4F6F9;
+  --ok-bg:#E3F4E8;--ok-ink:#14532D;--bad-bg:#FCE8E6;--bad-ink:#7A1812;--wn-bg:#FFF3D6;--wn-ink:#6B4200;
+  /* status palette for chart fills (good / critical / warning), always shown with an icon and a label */
+  --good:#0ca30c;--critical:#d03b3b;--warning:#fab219;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--page);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button{font:inherit;font-size:13px;padding:6px 12px;border-radius:8px;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.fr{border:.5px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);max-width:1280px;margin:0 auto}
+.top{background:var(--navy);color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;font-size:13px;gap:8px;flex-wrap:wrap}
+.top .name{font-weight:600;font-size:15px}
+.pill-top{padding:3px 10px;border-radius:8px;font-size:12px;background:var(--teal)}
+.pill-top.failed{background:#B3261E}.pill-top.none{background:#4A5D78}
+.body{display:flex;min-height:640px}
+.side{width:150px;background:var(--wash);padding:10px 8px;flex-shrink:0}
+.nv{padding:7px 9px;cursor:pointer;border-radius:8px;color:var(--navy);font-size:13px;margin:1px 0;border:0;background:none;width:100%;text-align:left}
+.nv:hover{background:#D7E1EE}.nv.on{background:var(--navy);color:#fff}
+.nv .cnt{float:right;font-size:11px;opacity:.8}
+.main{flex:1;padding:14px 16px;min-width:0}
+.pg{display:none}.pg.on{display:block}
+.h{font-size:16px;font-weight:600;color:var(--navy);margin:0 0 12px}
+.h2{font-size:13px;font-weight:600;color:var(--navy);margin:14px 0 8px}
+.g{display:grid;gap:8px;margin-bottom:12px}
+.m{border-radius:8px;padding:8px 10px;background:var(--wash)}
+.m span{font-size:12px;color:var(--ink-2);display:block}
+.m b{display:block;font-size:20px;font-weight:600;color:var(--navy);font-variant-numeric:tabular-nums}
+.m small{font-size:11px;color:var(--ink-2)}
+.m.ok{background:var(--ok-bg)}.m.ok b,.m.ok span{color:var(--ok-ink)}
+.m.bad{background:var(--bad-bg)}.m.bad b,.m.bad span{color:var(--bad-ink)}
+.m.wn{background:var(--wn-bg)}.m.wn b,.m.wn span{color:var(--wn-ink)}
+.pl{padding:2px 8px;border-radius:8px;font-size:12px;display:inline-block;white-space:nowrap}
+.ok{background:var(--ok-bg);color:var(--ok-ink)}.bad{background:var(--bad-bg);color:var(--bad-ink)}
+.wn{background:var(--wn-bg);color:var(--wn-ink)}.in{background:var(--wash);color:var(--navy)}
+.run{background:var(--teal);color:#fff}.pend{background:#F0F2F5;color:#6B7C93}
+.steps{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:12px}
+.st{padding:7px 4px;border-radius:8px;font-size:11px;text-align:center}
+.c{border:.5px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:10px}
+.c b.t{font-weight:600;display:block;margin-bottom:4px}
+.c.err{border-left:4px solid #B3261E}.c.warn{border-left:4px solid #C58A00}.c.good{border-left:4px solid #1E7B34}
+.muted{color:var(--ink-2);font-size:12px}
+.tw{overflow-x:auto;margin-bottom:10px}
+table.t{width:100%;font-size:12px;border-collapse:collapse}
+.t th{background:var(--navy);color:#fff;text-align:left;padding:6px;font-weight:500;white-space:nowrap}
+.t td{padding:6px;border-bottom:.5px solid var(--line-2);vertical-align:top}
+.t td.n{text-align:right;font-variant-numeric:tabular-nums}
+.t td.id{white-space:nowrap}
+.t tr.sel td{background:#EEF3F9}
+.t tr.click{cursor:pointer}.t tr.click:hover td{background:#F5F8FB}
+.up{border:1.5px dashed #6B7C93;border-radius:8px;padding:18px;text-align:center;font-size:13px;color:var(--ink-2);margin-bottom:12px;cursor:pointer;transition:background .15s}
+.up.drag{background:var(--wash);border-color:var(--navy)}
+.up b{color:var(--navy)}
+.bt{background:#fff;color:var(--navy);border:.5px solid var(--navy)}
+.pr{background:var(--teal);color:#fff;border:.5px solid var(--teal)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.prob{font-size:12px;margin:3px 0}
+.flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px}
+.flow .box{border:.5px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--wash)}
+.flow .box b{color:var(--navy);font-variant-numeric:tabular-nums}
+select,input[type=text]{font:inherit;font-size:12px;padding:4px 6px;border:.5px solid var(--line);border-radius:6px;background:#fff}
+/* chart: one 100% bar per submission */
+.chart{margin:4px 0 12px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin-bottom:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.bar-row{display:grid;grid-template-columns:minmax(120px,220px) 1fr 64px;gap:10px;align-items:center;margin:6px 0;font-size:12px}
+.bar-row .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{display:flex;gap:2px;height:18px;background:#F0F2F5;border-radius:4px;overflow:hidden}
+.bar span{display:block;height:100%;min-width:3px}
+.bar span:first-child{border-radius:4px 0 0 4px}.bar span:last-child{border-radius:0 4px 4px 0}
+.bar-row .rate{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;display:none;max-width:90vw}
+.toast.bad{background:#B3261E}
+.quote{font-style:italic;color:var(--ink)}
+@media (max-width:760px){
+  body{padding:8px}
+  .body{flex-direction:column}
+  .side{width:auto;display:flex;overflow-x:auto;gap:4px;padding:6px}
+  .nv{width:auto;white-space:nowrap}
+  .steps{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .bar-row{grid-template-columns:90px 1fr 52px}
+}
+</style>
+</head>
+<body>
+<div class="fr">
+  <div class="top">
+    <span class="name">SpecPilot</span>
+    <span id="top-scope">Reason 41 / DBVO</span>
+    <span id="top-status" class="pill-top none">No run yet</span>
+  </div>
+  <div class="body">
+    <nav class="side" aria-label="Pages">
+      <button class="nv on" data-p="p1">Run overview</button>
+      <button class="nv" data-p="p2">Spec and rules</button>
+      <button class="nv" data-p="p3">Test package</button>
+      <button class="nv" data-p="p4">Vendor output</button>
+      <button class="nv" data-p="p5">Validation</button>
+      <button class="nv" data-p="p6">Checks <span class="cnt" id="nav-checks"></span></button>
+      <button class="nv" data-p="p7">Audit log</button>
+    </nav>
+    <main class="main">
+
+      <section class="pg on" id="p1">
+        <p class="h">Run overview</p>
+        <div class="steps" id="steps"></div>
+        <div class="g" id="tiles" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
+        <div class="c" id="next"></div>
+        <div class="c"><b class="t">Recent activity</b><div id="recent" class="muted"></div></div>
+      </section>
+
+      <section class="pg" id="p2">
+        <p class="h">Spec and rules</p>
+        <div class="up" id="drop-spec" tabindex="0" role="button">
+          <b>Drop the specification PDF here</b> or click to choose it<br>
+          <span class="muted">Starts a full run: ingest → extraction → rule picker → translator → automatic approval → test package → expected results</span>
+        </div>
+        <input type="file" id="file-spec" accept="application/pdf,.pdf" hidden>
+        <div class="c" id="spec-info"></div>
+        <div class="c" id="accounting"></div>
+        <div class="row">
+          <label class="muted">Section <select id="f-section"></select></label>
+          <label class="muted">Show <select id="f-show">
+            <option value="all">all rules</option><option value="picked">picked for the card</option>
+            <option value="flagged">flagged (contradiction)</option><option value="unverified">quote not verified</option>
+          </select></label>
+          <span class="muted" id="rule-count"></span>
+        </div>
+        <div class="tw"><table class="t" id="rules"></table></div>
+        <div id="rule-detail"></div>
+      </section>
+
+      <section class="pg" id="p3">
+        <p class="h">Test package</p>
+        <div id="card"></div>
+        <div id="package"></div>
+      </section>
+
+      <section class="pg" id="p4">
+        <p class="h">Vendor output</p>
+        <div class="up" id="drop-vendor" tabindex="0" role="button">
+          <b>Drop the vendor's report PDF(s) here</b> or click to choose<br>
+          <span class="muted">Each report is checked against the expected results and stored, missing information included</span>
+        </div>
+        <input type="file" id="file-vendor" accept="application/pdf,.pdf" multiple hidden>
+        <div class="row"><button class="bt" id="demo">Load demo reports (invented SCENARIO data)</button>
+          <span class="muted">Three made-up SAP reports: one correct, one with errors, one incomplete</span></div>
+        <div id="received"></div>
+      </section>
+
+      <section class="pg" id="p5">
+        <p class="h">Validation</p>
+        <div class="g" id="v-tiles" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))"></div>
+        <p class="h2">Vendor result vs expected result, per submission</p>
+        <div class="chart" id="chart"></div>
+        <div class="tw"><table class="t" id="subs"></table></div>
+        <div id="flags"></div>
+      </section>
+
+      <section class="pg" id="p6">
+        <p class="h">Checks</p>
+        <div class="c in" style="border:0">No human review step: the criteria card is approved automatically only when every check passes.
+          An <span class="pl bad">error</span> stops the run; a <span class="pl wn">warning</span> lets it go on and is listed here.</div>
+        <div id="run-checks"></div>
+        <p class="h2">Vendor reports</p>
+        <div id="sub-checks"></div>
+      </section>
+
+      <section class="pg" id="p7">
+        <p class="h">Audit log</p>
+        <div class="row"><label class="muted">Actor <select id="f-actor"></select></label><span class="muted" id="audit-count"></span></div>
+        <div class="tw"><table class="t" id="audit"></table></div>
+      </section>
+
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+let S = null;            // the latest /api/state
+let selected = null;     // submission shown on the validation page
+let ruleSel = null;
+
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pct = x => x == null ? "–" : (x * 100).toFixed(1) + " %";
+const time = iso => iso ? iso.slice(11, 16) : "";
+const base = p => String(p || "").split(/[\\/]/).pop();
+
+function toast(msg, bad) {
+  const t = $("toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = "none", 4000);
+}
+
+// --- navigation ---
+function openPage(p) {
+  const n = document.querySelector(`.nv[data-p="${p}"]`);
+  if (!n) return;
+  document.querySelectorAll(".nv,.pg").forEach(x => x.classList.remove("on"));
+  n.classList.add("on"); $(p).classList.add("on");
+}
+document.querySelectorAll(".nv").forEach(n => n.onclick = () => {
+  openPage(n.dataset.p);
+  history.replaceState(null, "", "#" + n.dataset.p);
+  try { localStorage.setItem("specpilot-page", n.dataset.p); } catch (e) {}
+});
+// a link like /#p5 opens that page; otherwise the page this viewer had open last
+try { openPage(location.hash.slice(1) || localStorage.getItem("specpilot-page")); } catch (e) { openPage(location.hash.slice(1)); }
+
+// --- uploads ---
+function dropZone(zone, input, onFiles) {
+  zone.onclick = () => input.click();
+  zone.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } };
+  input.onchange = () => { onFiles([...input.files]); input.value = ""; };
+  zone.ondragover = e => { e.preventDefault(); zone.classList.add("drag"); };
+  zone.ondragleave = () => zone.classList.remove("drag");
+  zone.ondrop = e => { e.preventDefault(); zone.classList.remove("drag"); onFiles([...e.dataTransfer.files]); };
+}
+async function upload(route, file) {
+  const r = await fetch(`${route}?name=${encodeURIComponent(file.name)}`, {method: "POST", body: file});
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+dropZone($("drop-spec"), $("file-spec"), async files => {
+  if (!files.length) return;
+  try { await upload("/api/spec", files[0]); toast(`Run started for ${files[0].name}`); refresh(); }
+  catch (e) { toast(e.message, true); }
+});
+dropZone($("drop-vendor"), $("file-vendor"), async files => {
+  for (const f of files) {
+    try { const b = await upload("/api/vendor", f); selected = b.submission; toast(`${f.name} verified and stored`); }
+    catch (e) { toast(`${f.name}: ${e.message}`, true); }
+  }
+  refresh();
+});
+$("demo").onclick = async () => {
+  $("demo").disabled = true;
+  try {
+    const r = await fetch("/api/demo", {method: "POST"});
+    if (!r.ok) throw new Error((await r.json()).error);
+    selected = null; toast("Demo reports verified and stored"); await refresh();
+  } catch (e) { toast(e.message, true); }
+  $("demo").disabled = false;
+};
+
+// --- shared pieces ---
+function stepClass(s) {
+  if (s.status === "failed") return "bad";
+  if (s.status === "running") return "run";
+  if (s.status === "pending") return "pend";
+  return s.problems.some(p => p.severity === "warning") ? "wn" : "ok";
+}
+function problemsHtml(list) {
+  return list.map(p => `<div class="prob"><span class="pl ${p.severity === "error" ? "bad" : "wn"}">${esc(p.severity)}</span> ${esc(p.message)}</div>`).join("");
+}
+function verdictPill(v) {
+  const cls = v === "CERTIFIED" ? "ok" : v === "REJECTED" ? "bad" : "wn";
+  const icon = v === "CERTIFIED" ? "✓" : v === "REJECTED" ? "✕" : "!";
+  return `<span class="pl ${cls}">${icon} ${esc(v)}</span>`;
+}
+const tile = (label, value, cls = "", note = "") =>
+  `<div class="m ${cls}"><span>${esc(label)}</span><b>${esc(value)}</b>${note ? `<small>${esc(note)}</small>` : ""}</div>`;
+
+// --- pages ---
+function renderTop() {
+  const run = S.run, el = $("top-status");
+  if (S.running) { el.textContent = "Running…"; el.className = "pill-top"; }
+  else if (!run) { el.textContent = "No run yet"; el.className = "pill-top none"; }
+  else { el.textContent = run.status === "done" ? "Run finished" : "Run failed"; el.className = "pill-top" + (run.status === "failed" ? " failed" : ""); }
+  $("top-scope").textContent = "Reason 41 / DBVO" + (run ? ` · ${run.id} · ${base(run.pdf)}` : "");
+}
+
+function renderOverview() {
+  const run = S.run, t = S.totals;
+  const steps = run ? run.steps : [["Spec ingested"],["Rules extracted"],["Rules picked"],["Criteria card"],["Card approved"],["Test package"],["Expected results"]].map(([label]) => ({label, status: "pending", problems: []}));
+  $("steps").innerHTML = steps.map(s => {
+    const icon = {ok: "✓", wn: "!", bad: "✕", run: "…", pend: ""}[stepClass(s)];
+    return `<div class="st ${stepClass(s)}" title="${esc(s.summary || s.status)}">${icon} ${esc(s.label)}</div>`;
+  }).join("");
+  const verified = S.rules.filter(r => r.verified).length;
+  const people = run && run.data.people;
+  $("tiles").innerHTML =
+    tile("Rules verified", S.rules.length ? `${verified} / ${S.rules.length}` : "–") +
+    tile("Test people", people ?? "–", "", people ? base(run.data.dummy_stem) : "") +
+    tile("Vendor submissions", t.submissions) +
+    tile("Error rate", pct(t.error_rate), t.error_rate ? "bad" : t.submissions ? "ok" : "", `${t.cases_with_differences} of ${t.cases_compared} cases differ`) +
+    tile("Missing information", t.cases_missing, t.cases_missing ? "wn" : "", `cases, in ${t.with_missing_information} report(s)`);
+
+  let next;
+  if (S.running) {
+    const cur = run && run.steps.find(s => s.status === "running");
+    next = `Running: ${esc(cur ? cur.label : "starting")}. The page updates by itself.`;
+  } else if (!run) next = "Drop the specification PDF on <b>Spec and rules</b> to start a run.";
+  else if (run.status === "failed") {
+    const f = run.steps.find(s => s.status === "failed");
+    const p = f && f.problems.find(x => x.severity === "error");
+    next = `The run stopped at <b>${esc(f ? f.label : "?")}</b>: ${esc(p ? p.message : "see Checks")}`;
+  } else if (!t.submissions) next = `Send <b>${esc(base(run.data.stripped_csv))}</b> (Test package) to the vendors, then drop their reports on <b>Vendor output</b>.`;
+  else next = `${t.submissions} vendor report(s) verified: ${t.cases_with_differences} case(s) with differences, ${t.cases_missing} with missing information. See <b>Validation</b>.`;
+  $("next").innerHTML = `<b class="t">Next action</b>${next}`;
+  $("recent").innerHTML = S.audit.slice(0, 6).map(a => `${esc(time(a.at))} ${esc(a.actor)}: ${esc(a.action)}`).join("<br>") || "Nothing yet.";
+}
+
+function renderSpec() {
+  const run = S.run;
+  $("spec-info").innerHTML = `<b class="t">${esc(S.spec.document)}</b>` + (S.spec.pages
+    ? `${S.spec.pages} pages · ${S.spec.sections} numbered headings in the database` + (run ? ` · last run on <b>${esc(base(run.pdf))}</b>` : "")
+    : `<span class="muted">No spec loaded yet.</span>`);
+
+  const a = S.accounting;
+  $("accounting").innerHTML = !a ? `<b class="t">Rule accounting</b><span class="muted">No rules extracted yet.</span>` :
+    `<b class="t">Rule accounting: nothing gets lost between extractor and rule picker</b>
+     <div class="flow"><span class="box"><b>${a.total}</b> extracted</span>→
+       <span class="box"><b>${a.other_messages}</b> for other messages</span>+
+       <span class="box"><b>${a.about}</b> about reason ${esc(a.reason_code)}</span>→
+       <span class="box ok"><b>${a.picked.length}</b> picked for ${esc(a.card_id)}</span>+
+       <span class="box"><b>${a.excluded}</b> left out with a reason</span></div>
+     <div class="muted" style="margin-top:6px">${a.reasons.map(([r, n]) => `${n}× ${esc(r)}`).join(" · ")}</div>`;
+
+  const sections = [...new Set(S.rules.map(r => r.section))];
+  const fs = $("f-section"), cur = fs.value;
+  fs.innerHTML = `<option value="">all</option>` + sections.map(s => `<option ${s === cur ? "selected" : ""}>${esc(s)}</option>`).join("");
+  const picked = new Set(a ? a.picked : []), show = $("f-show").value;
+  const rows = S.rules.filter(r => (!fs.value || r.section === fs.value) &&
+    (show === "all" || (show === "picked" && picked.has(r.id)) || (show === "flagged" && r.flags.length) || (show === "unverified" && !r.verified)));
+  $("rule-count").textContent = `${rows.length} rule(s)`;
+  $("rules").innerHTML = `<tr><th>Rule</th><th>Page</th><th>Verified</th><th>Votes</th><th>Kind</th><th>Actor</th><th>Codes</th><th>Flag</th><th>Statement</th></tr>` +
+    rows.map(r => `<tr class="click ${r.id === ruleSel ? "sel" : ""}" data-rule="${esc(r.id)}"><td class="id">${esc(r.id)}${picked.has(r.id) ? '<br><span class="pl ok">picked</span>' : ""}</td>
+      <td class="n">${r.page}</td><td><span class="pl ${r.verified ? "ok" : "bad"}">${r.verified ? "yes" : "no"}</span></td><td class="n">${r.votes}</td>
+      <td>${esc(r.kind)}</td><td>${esc(r.actor)}</td><td>${esc(r.codes.join(", ") || "all")}</td>
+      <td>${r.flags.length ? '<span class="pl wn">contradiction</span>' : ""}</td><td>${esc(r.statement)}</td></tr>`).join("");
+  document.querySelectorAll("#rules tr[data-rule]").forEach(tr => tr.onclick = () => { ruleSel = tr.dataset.rule; renderSpec(); });
+  const r = S.rules.find(x => x.id === ruleSel);
+  $("rule-detail").innerHTML = r ? `<div class="c"><b class="t">${esc(r.id)} · page ${r.page}</b><span class="quote">„${esc(r.quote)}“</span><br>
+    <span class="muted">Rule: ${esc(r.statement)}</span>${r.flags.map(f => `<div class="prob"><span class="pl wn">flag</span> ${esc(f)}</div>`).join("")}</div>` : "";
+}
+
+function renderPackage() {
+  const c = S.card, run = S.run;
+  $("card").innerHTML = !c ? `<div class="c"><b class="t">Criteria card</b><span class="muted">No card yet: it is made by the translator during a run.</span></div>` :
+    `<div class="row"><span class="pl in">${esc(c.id)} v${c.version}</span>
+       <span class="pl ${c.status === "approved" ? "ok" : c.status === "rejected" ? "bad" : "wn"}">${esc(c.status)}</span>
+       ${c.reviewer ? `<span class="muted">by ${esc(c.reviewer)} ${esc(c.reviewed_at.replace("T", " "))}</span>` : ""}
+       ${c.changed_rules.length ? `<span class="pl bad">out of date: ${esc(c.changed_rules.join(", "))}</span>` : ""}</div>
+     <p class="h2">Conditions (all combined with ${esc(c.logic)})</p>
+     <div class="tw"><table class="t"><tr><th>Id</th><th>Condition</th><th>Rules</th><th>German words it rests on</th><th>Readings</th></tr>
+       ${c.criteria.map(x => `<tr><td>${esc(x.id)}</td><td><code>${esc(x.text)}</code></td><td>${esc(x.rules.join(", "))}</td><td class="quote">„${esc(x.quote)}“</td><td class="n">${x.readings}</td></tr>`).join("")}</table></div>
+     ${c.unused.length ? `<p class="h2">Picked rules not turned into a condition</p><div class="tw"><table class="t"><tr><th>Rule</th><th>Reason</th></tr>${c.unused.map(u => `<tr><td>${esc(u.rule_id)}</td><td>${esc(u.reason)}</td></tr>`).join("")}</table></div>` : ""}`;
+
+  const d = run && run.data;
+  const link = (path, label) => path ? `<a class="bt" style="text-decoration:none;padding:6px 12px;border-radius:8px;display:inline-block" href="/download?file=${encodeURIComponent(path)}">${esc(label)}</a>` : "";
+  const expectedCsv = d && d.expected_dir && d.dummy_stem ? `${d.expected_dir}/${d.dummy_stem}.expected.csv` : "";
+  const stepOf = name => run && run.steps.find(s => s.name === name);
+  $("package").innerHTML = !(d && d.dummy_stem) ? `<div class="c"><b class="t">Test package</b><span class="muted">No test package yet.</span></div>` :
+    `<p class="h2">Test people and expected results</p>
+     <div class="c"><b class="t">${esc(d.dummy_stem)}</b>${esc((stepOf("package") || {}).summary)}<br>${esc((stepOf("expected") || {}).summary)}</div>
+     <div class="row">${link(d.stripped_csv, "Download test people for the vendors (CSV)")}${link(expectedCsv, "Download expected results (CSV)")}</div>
+     <div class="muted">The vendors get the stripped CSV only: neutral ids, no hidden answers. The expected results stay here.</div>`;
+}
+
+function renderVendor() {
+  const subs = S.submissions;
+  $("received").innerHTML = !subs.length ? `<div class="c muted">No vendor report received yet.</div>` :
+    `<div class="tw"><table class="t"><tr><th>Received</th><th>Report</th><th>Vendor / software</th><th>Dummy file</th><th>Cases returned</th><th>Checks</th><th>Verdict</th></tr>` +
+    subs.map(s => {
+      const errs = s.checks.filter(p => p.severity === "error").length, warns = s.checks.length - errs;
+      const checks = errs ? `<span class="pl bad">${errs} error(s)</span>` : warns ? `<span class="pl wn">${warns} warning(s)</span>` : `<span class="pl ok">passed</span>`;
+      return `<tr><td>${esc(s.checked_at.replace("T", " ").slice(0, 16))}</td><td>${esc(s.report)}</td><td>${esc(s.vendor || "?")}<br><span class="muted">${esc(s.software)} ${esc(s.version)}</span></td>
+        <td>${esc(s.dummy_file || "?")}</td><td class="n">${s.cases_compared} / ${s.cases_expected}</td><td>${checks}</td><td>${verdictPill(s.verdict)}</td></tr>`;
+    }).join("") + `</table></div>`;
+}
+
+function renderValidation() {
+  const t = S.totals, subs = S.submissions;
+  $("v-tiles").innerHTML =
+    tile("Submissions", t.submissions) +
+    tile("Cases compared", t.cases_compared, "", `of ${t.cases_expected} expected`) +
+    tile("✓ Match", t.matches, t.matches ? "ok" : "") +
+    tile("✕ Differences", t.cases_with_differences, t.cases_with_differences ? "bad" : "", "cases") +
+    tile("! Missing information", t.cases_missing, t.cases_missing ? "wn" : "", `cases · ${t.with_missing_information} report(s) incomplete`) +
+    tile("Error rate", pct(t.error_rate), t.error_rate ? "bad" : "", "differences / compared");
+
+  if (!subs.length) {
+    $("chart").innerHTML = `<div class="c muted">No submissions yet. Drop vendor reports on Vendor output, or load the demo reports.</div>`;
+    $("subs").innerHTML = ""; $("flags").innerHTML = ""; return;
+  }
+  // 100% bar per submission: matches / differences / missing out of the cases expected
+  $("chart").innerHTML = `<div class="legend"><span><i style="background:var(--good)"></i>✓ Match</span><span><i style="background:var(--critical)"></i>✕ Difference</span><span><i style="background:var(--warning)"></i>! Missing information</span><span style="margin-left:auto">error rate</span></div>` +
+    subs.map(s => {
+      const whole = Math.max(s.cases_expected, s.cases_compared + s.cases_missing, 1);
+      const seg = (n, color, label) => n ? `<span style="width:${(n / whole * 100).toFixed(2)}%;background:${color}" title="${esc(label)}: ${n} of ${whole} cases"></span>` : "";
+      return `<div class="bar-row"><span class="lab" title="${esc(s.report)}">${esc(s.vendor || "?")} · ${esc(s.report)}</span>
+        <div class="bar" role="img" aria-label="${esc(s.report)}: ${s.matches} match, ${s.cases_with_differences} differ, ${s.cases_missing} missing">
+          ${seg(s.matches, "var(--good)", "Match")}${seg(s.cases_with_differences, "var(--critical)", "Difference")}${seg(s.cases_missing, "var(--warning)", "Missing information")}</div>
+        <span class="rate">${pct(s.error_rate)}</span></div>`;
+    }).join("");
+
+  if (!subs.some(s => s.id === selected)) selected = subs[0].id;
+  $("subs").innerHTML = `<tr><th>Report</th><th>Vendor</th><th>Version</th><th>Verdict</th><th>Compared</th><th>Match</th><th>Differences</th><th>Missing info</th><th>Error rate</th></tr>` +
+    subs.map(s => `<tr class="click ${s.id === selected ? "sel" : ""}" data-sub="${s.id}"><td>${esc(s.report)}</td><td>${esc(s.vendor || "?")}</td><td>${esc(s.version)}</td>
+      <td>${verdictPill(s.verdict)}</td><td class="n">${s.cases_compared} / ${s.cases_expected}</td><td class="n">${s.matches}</td>
+      <td class="n">${s.cases_with_differences}</td><td class="n">${s.cases_missing ? `<span class="pl wn">${s.cases_missing}</span>` : s.has_missing_information ? '<span class="pl wn">report</span>' : 0}</td>
+      <td class="n">${pct(s.error_rate)}</td></tr>`).join("");
+  document.querySelectorAll("#subs tr[data-sub]").forEach(tr => tr.onclick = () => { selected = Number(tr.dataset.sub); renderValidation(); });
+
+  const s = subs.find(x => x.id === selected);
+  const diffs = s.flags.filter(f => f.kind === "difference"), gaps = s.flags.filter(f => f.kind === "missing");
+  $("flags").innerHTML = `<p class="h2">${esc(s.report)}: ${diffs.length} difference(s), ${gaps.length} missing-information flag(s)</p>` +
+    diffs.map(f => `<div class="c err"><b class="t">${esc(f.flag)} · ${esc(f.test_case)} · ${esc(f.what)}</b>
+      <span class="pl in">Expected: ${esc(f.expected)}</span> <span class="pl bad">Vendor: ${esc(f.vendor)}</span>
+      ${f.reason ? `<div class="muted" style="margin-top:4px">Why: ${esc(f.reason)}</div>` : ""}</div>`).join("") +
+    gaps.map(f => `<div class="c warn"><b class="t">${esc(f.flag)} · missing information</b>${esc(f.what)}</div>`).join("") +
+    (s.notes.length ? `<div class="c muted">${s.notes.map(esc).join("<br>")}</div>` : "") +
+    (!diffs.length && !gaps.length ? `<div class="c good">Every case matches the expected result.</div>` : "");
+}
+
+function renderChecks() {
+  const run = S.run;
+  let errors = 0;
+  $("run-checks").innerHTML = !run ? `<div class="c muted">No run yet.</div>` : run.steps.map(s => {
+    errors += s.problems.filter(p => p.severity === "error").length;
+    const cls = stepClass(s), border = {bad: "err", wn: "warn", ok: "good"}[cls] || "";
+    return `<div class="c ${border}"><b class="t">${esc(s.label)} <span class="pl ${cls}">${esc(s.status)}</span></b>
+      ${s.summary ? `<div class="muted">${esc(s.summary)}</div>` : ""}${problemsHtml(s.problems) || (s.status === "done" ? '<div class="prob"><span class="pl ok">passed</span> no problems</div>' : "")}</div>`;
+  }).join("");
+  $("sub-checks").innerHTML = !S.submissions.length ? `<div class="c muted">No vendor report yet.</div>` : S.submissions.map(s => {
+    errors += s.checks.filter(p => p.severity === "error").length;
+    const border = s.checks.some(p => p.severity === "error") ? "err" : s.checks.length ? "warn" : "good";
+    return `<div class="c ${border}"><b class="t">${esc(s.report)} ${verdictPill(s.verdict)}</b>${problemsHtml(s.checks) || '<div class="prob"><span class="pl ok">passed</span> verdict and counts recomputed, all agree</div>'}</div>`;
+  }).join("");
+  $("nav-checks").textContent = errors ? `${errors} ✕` : "";
+}
+
+function renderAudit() {
+  const actors = [...new Set(S.audit.map(a => a.actor))].sort(), f = $("f-actor"), cur = f.value;
+  f.innerHTML = `<option value="">all</option>` + actors.map(a => `<option ${a === cur ? "selected" : ""}>${esc(a)}</option>`).join("");
+  const rows = S.audit.filter(a => !f.value || a.actor === f.value);
+  $("audit-count").textContent = `newest ${rows.length} entr${rows.length === 1 ? "y" : "ies"}`;
+  $("audit").innerHTML = `<tr><th>Time</th><th>Actor</th><th>Action</th><th>Subject</th><th>Model</th><th>Cache</th><th>Seconds</th></tr>` +
+    rows.map(a => `<tr><td>${esc(a.at.replace("T", " ").slice(0, 16))}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td>${esc(a.subject_id)}</td>
+      <td>${esc(a.model.replace(/^vllm\//, ""))}</td><td>${a.model ? (a.cache_hit ? "hit" : "miss") : ""}</td><td class="n">${a.duration_s ? a.duration_s : ""}</td></tr>`).join("");
+}
+
+function render() {
+  renderTop(); renderOverview(); renderSpec(); renderPackage(); renderVendor(); renderValidation(); renderChecks(); renderAudit();
+  $("drop-spec").style.opacity = S.running ? .5 : 1;
+}
+["f-section", "f-show"].forEach(id => $(id).onchange = renderSpec);
+$("f-actor").onchange = renderAudit;
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/state");
+    S = await r.json();
+    render();
+  } catch (e) { toast("The SpecPilot server is not reachable", true); }
+  clearTimeout(refresh.timer);
+  refresh.timer = setTimeout(refresh, S && S.running ? 2000 : 10000);
+}
+refresh();
+</script>
+</body>
+</html>

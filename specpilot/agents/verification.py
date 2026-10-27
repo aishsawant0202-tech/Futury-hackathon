@@ -287,6 +287,7 @@ class Verification:
     matches: int = 0
     differences: list[Difference] = field(default_factory=list)          # flagged errors E1, E2, ...
     missing_information: list[MissingItem] = field(default_factory=list)  # flagged gaps M1, M2, ...
+    missing_cases: list[str] = field(default_factory=list)  # test cases with no usable result in the report
     notes: list[str] = field(default_factory=list)
     made_by: str = VERSION
 
@@ -296,7 +297,7 @@ class Verification:
                  f"dummy file {self.dummy_file or '?'}",
                  f"  expected results: {', '.join(self.answers_used) or 'none found'}",
                  f"  {self.cases_compared} of {self.cases_expected} test case(s) compared, {self.matches} match, "
-                 f"{len(self.differences)} difference(s)"]
+                 f"{len(self.differences)} difference(s), {len(self.missing_cases)} case(s) with missing information"]
         if self.differences:
             lines.append(f"  ERRORS ({len(self.differences)}): results that do not match the expected results")
             lines += [f"  ✘ {d.text()}" for d in self.differences]
@@ -331,6 +332,7 @@ def verify(path: Path, expected_dir: Path = EXPECTED_DIR) -> Verification:
     missing = sorted(set(expected) - set(parsed.cases))
     unknown = sorted(set(parsed.cases) - set(expected))
     gaps += [f"{n}: no result in the report (test case not returned)" for n in missing]
+    v.missing_cases = missing
     gaps += [f"{n}: in the report, but the dummy file has no such test case" for n in unknown]
     readings_matched: dict[str, set[str]] = {}
     for neutral in sorted(set(expected) & set(parsed.cases)):

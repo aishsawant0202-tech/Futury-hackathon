@@ -12,7 +12,6 @@ from specpilot.models import (
     Layer,
     Requirement,
     RuleKind,
-    RuleStatus,
     Scenario,
     TestCase,
     Verdict,
@@ -62,16 +61,17 @@ def test_requirement_round_trip(conn):
     assert db.get_requirement(conn, "R-9.99-999") is None
 
 
-def test_examiner_approval(conn):
-    db.save_requirement(conn, _rule())
-    db.save_requirement(conn, _rule("R-3.12-002"))
-    db.set_status(conn, "R-3.12-001", RuleStatus.APPROVED, "matches p.135")
+def test_testing_agent_query(conn):
+    from specpilot.models import Actor
 
-    approved = db.list_requirements(conn, RuleStatus.APPROVED)
-    assert [r.id for r in approved] == ["R-3.12-001"]
-    assert approved[0].reviewer_note == "matches p.135"
-    with pytest.raises(KeyError):
-        db.set_status(conn, "R-9.99-999", RuleStatus.APPROVED)
+    db.save_requirement(conn, _rule().model_copy(update={"quote_verified": True, "reason_codes": ["41"]}))
+    db.save_requirement(conn, _rule("R-3.12-002").model_copy(update={"reason_codes": ["41"]}))  # quote not verified
+    db.save_requirement(conn, _rule("R-3.12-003").model_copy(update={"quote_verified": True, "actor": Actor.INSURER}))
+    db.save_requirement(conn, _rule("R-3.12-004").model_copy(update={"quote_verified": True, "reason_codes": ["42"]}))
+
+    testable = db.list_requirements(conn, reason_code="41", actor="employer", verified=True)
+    assert [r.id for r in testable] == ["R-3.12-001"]
+    assert len(db.list_requirements(conn)) == 4  # nothing is thrown away
 
 
 def test_page_search_finds_german_words(conn):
@@ -93,8 +93,7 @@ def test_saving_a_page_again_replaces_its_index(conn):
 
 def test_coverage_shows_gaps(conn):
     for rid in ("R-3.12-001", "R-3.12-002"):
-        db.save_requirement(conn, _rule(rid))
-        db.set_status(conn, rid, RuleStatus.APPROVED)
+        db.save_requirement(conn, _rule(rid).model_copy(update={"quote_verified": True}))
     db.save_test_case(conn, _case("TC-3.12-001", CaseKind.POSITIVE))
     db.save_test_case(conn, _case("TC-3.12-002", CaseKind.NEGATIVE))
 

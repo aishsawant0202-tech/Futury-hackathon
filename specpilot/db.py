@@ -2,7 +2,7 @@
 
 Each model is stored whole as JSON in a `data` column, so the tables never need
 changing when a model gains a field. The columns next to it are copies of the
-fields the dashboard filters and joins on (status, verdict, ...).
+fields the dashboard filters and joins on (section, verdict, ...).
 """
 import sqlite3
 from pathlib import Path
@@ -13,7 +13,6 @@ from specpilot.models import (
     ExpectedResult,
     Finding,
     Requirement,
-    RuleStatus,
     TestCase,
     Verdict,
 )
@@ -31,11 +30,20 @@ CREATE VIRTUAL TABLE IF NOT EXISTS spec_fts USING fts5(
     text, content='spec_pages', tokenize='unicode61 remove_diacritics 0'
 );
 
+-- Numbered headings (3.12, 2.2.2.5, ...) and the pages they span
+CREATE TABLE IF NOT EXISTS spec_sections (
+    document   TEXT NOT NULL,
+    number     TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    first_page INTEGER NOT NULL,
+    last_page  INTEGER NOT NULL,
+    PRIMARY KEY (document, number)
+);
+
 CREATE TABLE IF NOT EXISTS requirements (
     id      TEXT PRIMARY KEY,
     section TEXT NOT NULL,
     page    INTEGER NOT NULL,
-    status  TEXT NOT NULL,
     data    TEXT NOT NULL
 );
 
@@ -86,7 +94,16 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _drop_status(conn)
     return conn
+
+
+def _drop_status(conn: sqlite3.Connection) -> None:
+    """Databases made before rules lost their approval status: remove the column and the JSON keys."""
+    if "status" in [r["name"] for r in conn.execute("PRAGMA table_info(requirements)")]:
+        with conn:
+            conn.execute("ALTER TABLE requirements DROP COLUMN status")
+            conn.execute("UPDATE requirements SET data = json_remove(data, '$.status', '$.reviewer_note')")
 
 
 # --- spec text ---------------------------------------------------------------
@@ -122,13 +139,38 @@ def search_pages(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[
     return [dict(r) for r in rows]
 
 
+def save_sections(conn: sqlite3.Connection, document: str, sections: list[dict]) -> None:
+    """Replace all sections of a document. Each dict: number, title, first_page, last_page."""
+    with conn:
+        conn.execute("DELETE FROM spec_sections WHERE document = ?", (document,))
+        conn.executemany(
+            "INSERT INTO spec_sections (document, number, title, first_page, last_page) VALUES (?, ?, ?, ?, ?)",
+            [(document, s["number"], s["title"], s["first_page"], s["last_page"]) for s in sections],
+        )
+
+
+def list_sections(conn: sqlite3.Connection, document: str) -> list[dict]:
+    rows = conn.execute("SELECT number, title, first_page, last_page FROM spec_sections WHERE document = ? ORDER BY first_page", (document,))
+    return [dict(r) for r in rows]
+
+
+def section_pages(conn: sqlite3.Connection, document: str, number: str) -> list[int]:
+    """All pages of a section including its subsections, e.g. '3.12' -> [135, ..., 147]."""
+    row = conn.execute(
+        """SELECT MIN(first_page) AS first, MAX(last_page) AS last FROM spec_sections
+           WHERE document = ? AND (number = ? OR number LIKE ? || '.%')""",
+        (document, number, number),
+    ).fetchone()
+    return list(range(row["first"], row["last"] + 1)) if row["first"] is not None else []
+
+
 # --- rules -------------------------------------------------------------------
 
 def save_requirement(conn: sqlite3.Connection, r: Requirement) -> None:
     with conn:
         conn.execute(
-            "INSERT OR REPLACE INTO requirements (id, section, page, status, data) VALUES (?, ?, ?, ?, ?)",
-            (r.id, r.section, r.page, r.status.value, r.model_dump_json()),
+            "INSERT OR REPLACE INTO requirements (id, section, page, data) VALUES (?, ?, ?, ?)",
+            (r.id, r.section, r.page, r.model_dump_json()),
         )
 
 
@@ -137,22 +179,35 @@ def get_requirement(conn: sqlite3.Connection, rule_id: str) -> Requirement | Non
     return Requirement.model_validate_json(row["data"]) if row else None
 
 
-def list_requirements(conn: sqlite3.Connection, status: RuleStatus | None = None) -> list[Requirement]:
-    if status is None:
-        rows = conn.execute("SELECT data FROM requirements ORDER BY id").fetchall()
-    else:
-        rows = conn.execute("SELECT data FROM requirements WHERE status = ? ORDER BY id", (status.value,)).fetchall()
-    return [Requirement.model_validate_json(r["data"]) for r in rows]
+def list_requirements(
+    conn: sqlite3.Connection, reason_code: str | None = None, actor: str | None = None, verified: bool | None = None
+) -> list[Requirement]:
+    """reason_code picks the rules for one message (e.g. "41"), plus the rules that apply to every message.
+
+    What the testing agent reads: list_requirements(conn, reason_code="41", actor="employer", verified=True)
+    """
+    sql, args = "SELECT data FROM requirements WHERE 1=1", []
+    if actor is not None:
+        sql += " AND json_extract(data, '$.actor') = ?"
+        args.append(actor)
+    if verified is not None:
+        sql += " AND json_extract(data, '$.quote_verified') = ?"
+        args.append(int(verified))
+    if reason_code is not None:
+        sql += """ AND (json_array_length(data, '$.reason_codes') = 0
+                   OR EXISTS (SELECT 1 FROM json_each(data, '$.reason_codes') WHERE value = ?))"""
+        args.append(reason_code)
+    return [Requirement.model_validate_json(r["data"]) for r in conn.execute(sql + " ORDER BY id", args)]
 
 
-def set_status(conn: sqlite3.Connection, rule_id: str, status: RuleStatus, note: str = "") -> Requirement:
-    """The examiner's decision at gate 1."""
-    r = get_requirement(conn, rule_id)
-    if r is None:
-        raise KeyError(rule_id)
-    r = r.model_copy(update={"status": status, "reviewer_note": note or r.reviewer_note})
-    save_requirement(conn, r)
-    return r
+def delete_section(conn: sqlite3.Connection, section: str) -> int:
+    """Before a new extraction run: drop the section's old rules (and the test cases built on them)."""
+    cases = """SELECT c.test_case_id FROM case_requirements c JOIN requirements r ON r.id = c.requirement_id
+               WHERE r.section = ?"""
+    with conn:
+        conn.execute(f"DELETE FROM findings WHERE test_case_id IN ({cases})", (section,))
+        conn.execute(f"DELETE FROM test_cases WHERE id IN ({cases})", (section,))
+        return conn.execute("DELETE FROM requirements WHERE section = ?", (section,)).rowcount
 
 
 # --- test cases and expected results -------------------------------------------
@@ -185,7 +240,7 @@ def list_test_cases(conn: sqlite3.Connection, requirement_id: str | None = None)
 
 
 def coverage(conn: sqlite3.Connection) -> list[dict]:
-    """Per approved rule: how many positive / negative / boundary cases exist. Zero anywhere = a gap."""
+    """Per testable rule (employer, verified quote): how many positive / negative / boundary cases. Zero = a gap."""
     rows = conn.execute(
         """SELECT r.id AS requirement_id,
                   SUM(t.kind = 'positive') AS positive,
@@ -194,7 +249,7 @@ def coverage(conn: sqlite3.Connection) -> list[dict]:
            FROM requirements r
            LEFT JOIN case_requirements c ON c.requirement_id = r.id
            LEFT JOIN test_cases t ON t.id = c.test_case_id
-           WHERE r.status = 'approved'
+           WHERE json_extract(r.data, '$.actor') = 'employer' AND json_extract(r.data, '$.quote_verified') = 1
            GROUP BY r.id ORDER BY r.id"""
     ).fetchall()
     return [{k: (row[k] or 0) if k != "requirement_id" else row[k] for k in row.keys()} for row in rows]

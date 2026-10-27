@@ -22,6 +22,9 @@ _client_instance: OpenAI | None = None
 
 M = TypeVar("M", bound=BaseModel)
 
+# One entry per chat() call: model, cache_hit, duration_s. Agents read the new entries to write audit rows.
+calls: list[dict] = []
+
 
 def _client() -> OpenAI:
     """Created on first use, so modules can be imported without a key (e.g. in tests)."""
@@ -48,12 +51,15 @@ def chat(model: str, messages: list[dict], use_cache: bool = True, **kwargs) -> 
     key = _key(payload)
     if use_cache and key in _cache:
         log.info("cache hit %s %s", model, key[:10])
+        calls.append({"model": model, "cache_hit": True, "duration_s": 0.0})
         return _cache[key]
 
     started = time.time()
     resp = _client().chat.completions.create(**payload)
     text = resp.choices[0].message.content or ""
-    log.info("llm call %s %s %.1fs", model, key[:10], time.time() - started)
+    duration = time.time() - started
+    log.info("llm call %s %s %.1fs", model, key[:10], duration)
+    calls.append({"model": model, "cache_hit": False, "duration_s": round(duration, 2)})
     _cache[key] = text
     return text
 

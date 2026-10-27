@@ -12,7 +12,6 @@ from specpilot.models import (
     Layer,
     Requirement,
     RuleKind,
-    RuleStatus,
     Scenario,
     TestCase,
     Verdict,
@@ -35,7 +34,6 @@ def _rule(**overrides):
 
 def test_sample_requirement():
     r = _rule()
-    assert r.status is RuleStatus.DRAFT
     assert r.quote_verified is False
     assert Requirement.model_validate_json(r.model_dump_json()) == r
 

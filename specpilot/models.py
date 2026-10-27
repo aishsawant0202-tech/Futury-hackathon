@@ -6,8 +6,11 @@ and every step along the way leaves an AuditEntry.
 """
 from datetime import date, datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from specpilot import config
 
 
 class _Model(BaseModel):
@@ -15,10 +18,35 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class RuleStatus(str, Enum):
-    DRAFT = "draft"  # found by the extraction agent, not yet reviewed
-    APPROVED = "approved"  # examiner accepted it at gate 1; only these get test cases
-    REJECTED = "rejected"
+# Abgabegrund values from 3.1.18 (Verfahrensbeschreibung p.44). A rule is labelled with the messages it applies to.
+REASON_CODES = {
+    "01": "Entgeltbescheinigung KV bei Krankengeld",
+    "02": "Entgeltbescheinigung KV bei Kinderkrankengeld",
+    "03": "Entgeltbescheinigung KV bei Mutterschaftsgeld",
+    "04": "Entgeltbescheinigung KV bei Krankengeld wegen Mitaufnahme (Begleitung Menschen mit Behinderung)",
+    "11": "Entgeltbescheinigung RV bei Übergangsgeld medizinische Rehabilitation",
+    "12": "Entgeltbescheinigung RV bei Übergangsgeld Teilhabe am Arbeitsleben",
+    "21": "Entgeltbescheinigung UV bei Verletztengeld",
+    "22": "Entgeltbescheinigung UV bei Übergangsgeld",
+    "23": "Entgeltbescheinigung UV bei Kinderverletztengeld",
+    "31": "Entgeltbescheinigung BA Übergangsgeld",
+    "41": "Anforderung Vorerkrankungsmitteilungen",
+    "42": "Anforderung Ende Entgeltersatzleistung",
+    "51": "Höhe der beitragspflichtigen Einnahmen (§ 23c SGB IV)",
+    "61": "Rückmeldung Vorerkrankungsmitteilungen",
+    "62": "Übermittlung Ende Entgeltersatzleistung",
+    "66": "Rückmeldung falscher Abgabegrund",
+    "67": "Unzuständige Krankenkasse / unbekannte Person",
+    "71": "Höhe der Entgeltersatzleistung",
+    "72": "Anforderung Anzahl freigestellter Arbeitstage",
+    "73": "Rückmeldung Anzahl freigestellter Arbeitstage",
+    "88": "Stornierung eines Datensatzes",
+    "99": "Wechsel der meldenden Stelle und Systemwechsel",
+}
+ReasonCode = Literal[
+    "01", "02", "03", "04", "11", "12", "21", "22", "23", "31", "41",
+    "42", "51", "61", "62", "66", "67", "71", "72", "73", "88", "99",
+]
 
 
 class RuleKind(str, Enum):
@@ -26,6 +54,11 @@ class RuleKind(str, Enum):
     CONTENT = "content"  # what a field must contain
     ORDER = "order"  # ordering of repeated entries
     FORMAT = "format"  # length, type, position in the record
+
+
+class Actor(str, Enum):
+    EMPLOYER = "employer"  # the payroll software under test must do this
+    INSURER = "insurer"  # duty of the health insurer / SV-Träger; context, not tested directly
 
 
 class CaseKind(str, Enum):
@@ -55,13 +88,13 @@ class Requirement(_Model):
     quote: str = Field(min_length=10, description="Exact German text from that page")
     statement: str = Field(description="The rule in one plain English sentence")
     kind: RuleKind
-    document: str = "Verfahrensbeschreibung DTA EEL 13.4"
+    actor: Actor = Actor.EMPLOYER
+    reason_codes: list[ReasonCode] = Field(default_factory=list, description="Messages the rule applies to; empty = all messages")
+    document: str = config.SPEC_DOCUMENT
     # Set by code, not by the model
     quote_verified: bool = False
     votes: int = Field(default=1, ge=0, description="In how many of the extraction runs the rule appeared")
     flags: list[str] = Field(default_factory=list, description="Contradictions or doubts for the examiner")
-    status: RuleStatus = RuleStatus.DRAFT
-    reviewer_note: str = ""
 
 
 class AbsencePeriod(_Model):
@@ -110,6 +143,8 @@ class ExpectedResult(_Model):
     message_expected: bool = Field(description="Must a reason 41 message be created at all?")
     fields: dict[str, str] = Field(default_factory=dict, description="Field name -> exact value as in the file")
     periods: list[AbsencePeriod] = Field(default_factory=list, description="Reported periods, in required order")
+    reasons: list[str] = Field(default_factory=list, description="Each check with its numbers and spec page")
+    reading: str = Field(default="", description="Which reading of an ambiguous rule was used")
     produced_by: str = "reference_model"
 
 
